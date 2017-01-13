@@ -198,6 +198,8 @@ class AppleMapsOverlayViewController: UIViewController, IALocationManagerDelegat
             circle = MKCircle(center: newLocation, radius: 1)
             map.add(circle)
             
+			// Allow the user to walk a few steps, in order to let IA accurately position
+			// the user before invoking the "ghost"
             if (locationList.count > 10) {
                 
                 // Remove the previous 'ghost' circle overlay and set up a new overlay
