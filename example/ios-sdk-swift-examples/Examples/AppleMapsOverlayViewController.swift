@@ -256,29 +256,7 @@ class AppleMapsOverlayViewController: UIViewController, IALocationManagerDelegat
             }
         })
     }
-    
-    /*
-     func textImage(text: String, size: CGSize) -> UIImage {
-     
-     let data = text.data(using: String.Encoding.utf8, allowLossyConversion: true)
-     let drawText = NSString(data: data!, encoding: String.Encoding.utf8.rawValue)
-     
-     let textFontAttributes = [
-     NSFontAttributeName: UIFont(name: "Helvetica Bold", size: 20)!,
-     NSForegroundColorAttributeName: UIColor.red,
-     ]
-     
-     var Zero = Double(0);
-     
-     UIGraphicsBeginImageContextWithOptions(size, false, 0)
-     drawText?.draw(in: MKMapRectMake(Zero, Zero, Double(size.width), Double(size.height)), withAttributes: textFontAttributes)
-     let newImage = UIGraphicsGetImageFromCurrentImageContext()
-     UIGraphicsEndImageContext()
-     
-     return newImage
-     }
-     */
-    
+        
     func indoorLocationManager(_ manager: IALocationManager, didEnter region: IARegion) {
         
         guard region.type == kIARegionTypeFloorPlan else { return }
