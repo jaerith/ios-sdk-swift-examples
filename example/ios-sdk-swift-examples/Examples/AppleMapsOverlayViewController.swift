@@ -37,6 +37,21 @@ class MapOverlay: NSObject, MKOverlay {
     }
 }
 
+class MapPin : NSObject, MKAnnotation {
+    var coordinate: CLLocationCoordinate2D
+    var title: String?
+    var subtitle: String?
+    
+    init(coordinate: CLLocationCoordinate2D, title: String, subtitle: String) {
+        self.coordinate = coordinate
+        self.title = title
+        self.subtitle = subtitle
+    }
+}
+
+class Ghost : MKCircle {}
+
+
 // Class for rendering map overlay objects
 class MapOverlayRenderer: MKOverlayRenderer {
     var overlayImage: UIImage
@@ -81,6 +96,14 @@ class AppleMapsOverlayViewController: UIViewController, IALocationManagerDelegat
     var camera = MKMapCamera()
     var updateCamera = Bool()
     var circle = MKCircle()
+    var ghost = Ghost()
+    var locationList = [IALocation]()
+    var lastGhostIndex = 0
+    
+    // var pin = MapPin(coordinate: CLLocationCoordinate2D(latitude: 0,longitude: 0), title: "Blank", subtitle: "Blank")
+    var pin = MKPointAnnotation()
+    
+    var updatedLocation = CLLocationCoordinate2D(latitude: 0,longitude: 0)
     
     var floorPlan = IAFloorPlan()
     var locationManager = IALocationManager()
@@ -89,8 +112,13 @@ class AppleMapsOverlayViewController: UIViewController, IALocationManagerDelegat
     override func viewDidLoad() {
         super.viewDidLoad()
         
+        pin.coordinate = CLLocationCoordinate2D(latitude: 0,longitude: 0)
+        pin.title = "Blank"
+        pin.subtitle = "Blank"
+        map.addAnnotation(pin)
+        
         // Show spinner while waiting for location information from IALocationManager
-        SVProgressHUD.show(withStatus: NSLocalizedString("Waiting for location data", comment: ""))
+        SVProgressHUD.show(withStatus:NSLocalizedString("Waiting for location data", comment: ""))
     }
     
     // Hide status bar
@@ -108,21 +136,51 @@ class AppleMapsOverlayViewController: UIViewController, IALocationManagerDelegat
     func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
         var circleRenderer:MKCircleRenderer!
         
-        // If it is possible to convert overlay to MKCircle then render the circle with given properties. Else if the overlay is class of MapOverlay set up its own MapOverlayRenderer. Else render red circle.
-        if let overlay = overlay as? MKCircle {
+        if overlay is Ghost {
+            circleRenderer = MKCircleRenderer(circle: overlay as! MKCircle)
+            circleRenderer.fillColor = UIColor(colorLiteralRed: 1, green: 0, blue: 0, alpha: 1.0)
+            return circleRenderer
+            
+        }
+            // If it is possible to convert overlay to MKCircle then render the circle with given properties. Else if the overlay is class of MapOverlay set up its own MapOverlayRenderer. Else render red circle.
+        else if let overlay = overlay as? MKCircle {
             circleRenderer = MKCircleRenderer(circle: overlay)
             circleRenderer.fillColor = UIColor(colorLiteralRed: 0, green: 0.647, blue: 0.961, alpha: 1.0)
             return circleRenderer
             
-        } else if overlay is MapOverlay {
+        }
+        else if overlay is MapOverlay {
             let overlayView = MapOverlayRenderer(overlay: overlay, overlayImage: fpImage, fp: floorPlan)
             return overlayView
             
-        } else {
+        }
+        else {
             circleRenderer = MKCircleRenderer(overlay: overlay)
             circleRenderer.fillColor = UIColor.init(colorLiteralRed: 1, green: 0, blue: 0, alpha: 1.0)
             return circleRenderer
         }
+    }
+    
+    func mapView(_ viewFormapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+        if (annotation is MKUserLocation) {
+            //if annotation is not an MKPointAnnotation (eg. MKUserLocation),
+            //return nil so map draws default view for it (eg. blue dot)...
+            return nil
+        }
+        
+        let reuseId = "test"
+        
+        var anView = map.dequeueReusableAnnotationView(withIdentifier: reuseId)
+        if anView == nil {
+            anView = MKPinAnnotationView(annotation: annotation, reuseIdentifier: reuseId)
+            //anView.canShowCallout = true
+        }
+        else {
+            //we are re-using a view, update its annotation reference...
+            anView?.annotation = annotation
+        }
+        
+        return anView
     }
     
     func indoorLocationManager(_ manager: IALocationManager, didUpdateLocations locations: [AnyObject]) {
@@ -140,6 +198,45 @@ class AppleMapsOverlayViewController: UIViewController, IALocationManagerDelegat
             circle = MKCircle(center: newLocation, radius: 1)
             map.add(circle)
             
+            if (locationList.count > 10) {
+                
+                // Remove the previous 'ghost' circle overlay and set up a new overlay
+                var ghostIndex = locationList.count
+                if ((ghostIndex % 3) == 0) {
+                    ghostIndex = ghostIndex + 3;
+                }
+                
+                ghostIndex = ghostIndex - 6
+                if (lastGhostIndex > ghostIndex) {
+                    ghostIndex = lastGhostIndex + 1
+                }
+                
+                let g = locationList[ghostIndex]
+                
+                if let ghostLocation = g.location?.coordinate {
+                    // Remove the previous 'ghost' cirlce overlay and set up a new overlay
+                    map.remove(ghost as MKOverlay)
+                    ghost = Ghost(center: ghostLocation, radius: 0.5)
+                    map.add(ghost)
+                }
+                
+                lastGhostIndex = ghostIndex
+            }
+            
+            locationList.append(l)
+            
+            // Update annotation
+            updatedLocation = newLocation
+            pin.coordinate = updatedLocation
+            
+            var newTitle = "Lat("
+            newTitle += String(pin.coordinate.latitude)
+            newTitle += "), Long:("
+            newTitle += String(pin.coordinate.longitude)
+            newTitle += ")"
+            
+            pin.title = newTitle
+            
             // Ask Map Kit for a camera that looks at the location from an altitude of 300 meters above the eye coordinates.
             camera = MKMapCamera(lookingAtCenter: (l.location?.coordinate)!, fromEyeCoordinate: (l.location?.coordinate)!, eyeAltitude: 300)
             
@@ -150,15 +247,37 @@ class AppleMapsOverlayViewController: UIViewController, IALocationManagerDelegat
     
     // Fetches image with the given IAFloorplan
     func fetchImage(_ floorPlan:IAFloorPlan) {
-        imageFetch = self.resourceManager.fetchFloorPlanImage(with: floorPlan.imageUrl!, andCompletion: { (data, error) in
+        imageFetch = self.resourceManager.fetchFloorPlanImage(with:floorPlan.imageUrl!, andCompletion: { (data, error) in
             if (error != nil) {
-                print(error)
+                print(error ?? "Default Error Message")
             } else {
                 self.fpImage = UIImage.init(data: data!)!
                 self.changeMapOverlay()
             }
         })
     }
+    
+    /*
+     func textImage(text: String, size: CGSize) -> UIImage {
+     
+     let data = text.data(using: String.Encoding.utf8, allowLossyConversion: true)
+     let drawText = NSString(data: data!, encoding: String.Encoding.utf8.rawValue)
+     
+     let textFontAttributes = [
+     NSFontAttributeName: UIFont(name: "Helvetica Bold", size: 20)!,
+     NSForegroundColorAttributeName: UIColor.red,
+     ]
+     
+     var Zero = Double(0);
+     
+     UIGraphicsBeginImageContextWithOptions(size, false, 0)
+     drawText?.draw(in: MKMapRectMake(Zero, Zero, Double(size.width), Double(size.height)), withAttributes: textFontAttributes)
+     let newImage = UIGraphicsGetImageFromCurrentImageContext()
+     UIGraphicsEndImageContext()
+     
+     return newImage
+     }
+     */
     
     func indoorLocationManager(_ manager: IALocationManager, didEnter region: IARegion) {
         
@@ -167,7 +286,7 @@ class AppleMapsOverlayViewController: UIViewController, IALocationManagerDelegat
         updateCamera = true
         
         if (floorPlanFetch != nil) {
-            floorPlanFetch.cancel()
+            // floorPlanFetch.cancel()
             floorPlanFetch = nil
         }
         
